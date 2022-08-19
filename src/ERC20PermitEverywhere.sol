@@ -7,6 +7,8 @@ pragma solidity ^0.8.15;
 contract ERC20PermitEverywhere {
     bytes32 public immutable DOMAIN_SEPARATOR;
     bytes32 public immutable TRANSFER_PERMIT_TYPEHASH;
+    uint256 public immutable deploymentChainId;
+    bytes32 private immutable _DOMAIN_SEPARATOR;
 
     // Permit message to be consumed by executePermitTransferFrom().
     struct PermitTransferFrom {
@@ -37,12 +39,31 @@ contract ERC20PermitEverywhere {
             keccak256(bytes('ERC20PermitEverywhere')),
             keccak256('1.0.0'),
             block.chainid,
-            address(this)
+            address(this).
+            deploymentChainId = block.chainid;
+            _DOMAIN_SEPARATOR = _calculateDomainSeparator(block.chainid);
         ));
         TRANSFER_PERMIT_TYPEHASH =
             keccak256('PermitTransferFrom(address token,address spender,uint256 maxAmount,uint256 deadline,uint256 nonce)');
     }
 
+    /// @dev Calculate the DOMAIN_SEPARATOR.
+    function _calculateDomainSeparator(uint256 chainId) private view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes(name)),
+                keccak256(bytes(version())),
+                chainId,
+                address(this)
+            )
+        );
+    }
+    
+    function DOMAIN_SEPARATOR() external view returns (bytes32) {
+        return block.chainid == deploymentChainId ? _DOMAIN_SEPARATOR : _calculateDomainSeparator(block.chainid);
+    }
+    
     /// @notice Increase sender's nonce by `increaseAmount`. This will effectively
     ///         cancel any outstanding permits signed with a nonce lower than the
     ///         final value.
@@ -87,6 +108,7 @@ contract ERC20PermitEverywhere {
     {
         bytes32 domainSeparator = DOMAIN_SEPARATOR;
         bytes32 typeHash = TRANSFER_PERMIT_TYPEHASH;
+        
         assembly {
             // Hash the permit message in-place to compute the struct hash.
             if lt(permit, 0x20)  {
